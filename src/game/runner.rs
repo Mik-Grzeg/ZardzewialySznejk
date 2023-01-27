@@ -1,15 +1,15 @@
-use super::snake::{Snake, SnakeError};
 use super::board::Board;
-use super::point::Direction;
 use super::consts::*;
+use super::point::Direction;
+use super::snake::{Snake, SnakeError};
 use std::collections::HashMap;
 
-use rand::prelude::*;
+
 use rand::distributions::WeightedIndex;
-use rand::distributions::weighted::WeightedError;
-use tracing::{debug, error, info, trace, span, warn, Level};
-use tokio::time::{interval_at, Duration, Instant, Interval, MissedTickBehavior};
+use rand::prelude::*;
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::time::{interval_at, Duration, Instant, Interval, MissedTickBehavior};
+use tracing::{debug, error, info, trace, warn};
 
 const MOVE_COMMAND_CHANNEL_SIZE: usize = 1000;
 
@@ -22,13 +22,19 @@ struct MoveCommandManager {
 impl Default for MoveCommandManager {
     fn default() -> Self {
         let (command_sender, command_rx) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
-        MoveCommandManager { command_rx, command_sender }
+        MoveCommandManager {
+            command_rx,
+            command_sender,
+        }
     }
 }
 
 #[tracing::instrument]
-pub async  fn start_game(fps: f32) {
-    let mut game = Game { fps, ..Default::default() };
+pub async fn start_game(fps: f32) {
+    let mut game = Game {
+        fps,
+        ..Default::default()
+    };
 
     game.start().await;
 }
@@ -42,7 +48,10 @@ fn create_game_action_interval(spf: f32) -> Interval {
 }
 
 #[tracing::instrument(skip(rng))]
-fn pick_move_direction_based_on_probabilities(issued_commands: &mut HashMap<Direction, u32>, mut rng: &mut impl Rng) -> Option<Direction> {
+fn pick_move_direction_based_on_probabilities(
+    issued_commands: &mut HashMap<Direction, u32>,
+    mut rng: &mut impl Rng,
+) -> Option<Direction> {
     let (directions, weights): (Vec<Direction>, Vec<u32>) = issued_commands.drain().unzip();
     let dist = WeightedIndex::new(&weights).ok()?;
 
@@ -106,4 +115,3 @@ impl Game {
         1.0 / self.fps as f32
     }
 }
-

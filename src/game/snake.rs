@@ -3,7 +3,7 @@ use super::point::*;
 use std::collections::VecDeque;
 use std::sync::RwLock;
 use thiserror::Error;
-use tracing::{trace};
+use tracing::trace;
 
 #[derive(Debug)]
 struct SnakeIncreaseCommand {}
@@ -47,9 +47,8 @@ impl Default for Snake {
     }
 }
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum SnakeError {
-
     #[error("Snake collided with its tail")]
     BitOffHisTail,
 
@@ -79,7 +78,6 @@ impl Snake {
         self.increase_snake = None;
         new_segment_or_err
     }
-
 
     #[tracing::instrument(skip(self))]
     pub fn make_move(&mut self, direction: Option<Direction>) -> Result<(), SnakeError> {
@@ -120,12 +118,10 @@ impl Snake {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::game::snake::{SnakeError, BOARD_SIZE};
     use super::{get_center_of_board_coordinates, Direction, Point, Snake};
-
+    use crate::game::snake::{SnakeError, BOARD_SIZE};
 
     #[test]
     fn test_snake_making_moves() {
@@ -146,7 +142,10 @@ mod tests {
         let move_result = snake.make_move(None);
         let center = get_center_of_board_coordinates();
 
-        let expected_point = Point { x: center, y: center - 1 };
+        let expected_point = Point {
+            x: center,
+            y: center - 1,
+        };
 
         assert_eq!(move_result.err(), None);
         assert_eq!(*snake.head().unwrap(), expected_point);
@@ -156,7 +155,10 @@ mod tests {
     fn test_snake_head_positions_while_moving() {
         let mut snake = Snake::new();
         let center = get_center_of_board_coordinates();
-        let mut point = Point { x: center, y:  center};
+        let mut point = Point {
+            x: center,
+            y: center,
+        };
 
         assert_eq!(*snake.head().unwrap(), point);
 
@@ -177,7 +179,8 @@ mod tests {
         let mut snake = Snake::new();
         let center = get_center_of_board_coordinates();
 
-        (center..BOARD_SIZE).chain(0..=center)
+        (center..BOARD_SIZE)
+            .chain(0..=center)
             .map(|i| Point { x: i, y: center })
             .for_each(|point| {
                 assert_eq!(*snake.head().unwrap(), point);
@@ -213,11 +216,8 @@ mod tests {
         _ = snake.make_move(None);
         assert_eq!(snake.size(), 4);
 
-
         snake.increase_snake_command();
         _ = snake.make_move(None);
         assert_eq!(snake.size(), 5);
-
     }
-
 }

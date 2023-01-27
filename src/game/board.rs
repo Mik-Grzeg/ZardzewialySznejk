@@ -1,6 +1,8 @@
-use std::{fmt::{Display, Write}, io::IoSlice};
-use lazy_static::lazy_static;
 use super::consts::*;
+
+use std::{
+    fmt::{Display, Write},
+};
 const BOARD_USIZE: usize = BOARD_SIZE as usize;
 
 const SE: char = '┌';
@@ -52,7 +54,6 @@ impl From<Wall> for char {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
 enum CellSymbol {
     Board,
@@ -60,7 +61,7 @@ enum CellSymbol {
     SnakeHead,
     Fruit,
     Wall(Wall),
-    Junction(Junction)
+    Junction(Junction),
 }
 
 impl CellSymbol {
@@ -71,7 +72,7 @@ impl CellSymbol {
             CellSymbol::SnakeHead => '@',
             CellSymbol::Fruit => 'O',
             CellSymbol::Wall(wall) => wall.into(),
-            CellSymbol::Junction(junction) => junction.into()
+            CellSymbol::Junction(junction) => junction.into(),
         }
     }
 }
@@ -85,7 +86,6 @@ impl Display for CellSymbol {
 
 type Canvas = [[CellSymbol; BOARD_USIZE]; BOARD_USIZE];
 
-
 #[derive(Debug)]
 pub struct Board {
     canvas: Canvas,
@@ -93,7 +93,7 @@ pub struct Board {
 }
 
 impl Board {
-    pub fn get_board(&self, wr: &mut impl Write) -> Result<(), std::fmt::Error>{
+    pub fn get_board(&self, wr: &mut impl Write) -> Result<(), std::fmt::Error> {
         for row in self.canvas {
             for cell in row {
                 wr.write_char(cell.to_char())?;
@@ -103,15 +103,13 @@ impl Board {
 
         Ok(())
     }
-
 }
 
 impl Default for Board {
     fn default() -> Board {
         let mut data = [[CellSymbol::Board; BOARD_USIZE]; BOARD_USIZE];
 
-        for i in 1..(BOARD_USIZE-1) {
-
+        for i in 1..(BOARD_USIZE - 1) {
             // set '|' for vertical walls
             data[i][0] = CellSymbol::Wall(Wall::NS);
             data[i][BOARD_USIZE - 1] = CellSymbol::Wall(Wall::NS);
@@ -123,12 +121,10 @@ impl Default for Board {
 
         // set proper symbol for corner cells
         data[0][0] = CellSymbol::Junction(Junction::SE);
-        data[BOARD_USIZE-1][BOARD_USIZE-1] = CellSymbol::Junction(Junction::NW);
-        data[0][BOARD_USIZE-1] = CellSymbol::Junction(Junction::SW);
-        data[BOARD_USIZE-1][0] = CellSymbol::Junction(Junction::NE);
+        data[BOARD_USIZE - 1][BOARD_USIZE - 1] = CellSymbol::Junction(Junction::NW);
+        data[0][BOARD_USIZE - 1] = CellSymbol::Junction(Junction::SW);
+        data[BOARD_USIZE - 1][0] = CellSymbol::Junction(Junction::NE);
 
-        Board {
-            canvas: data
-        }
+        Board { canvas: data }
     }
 }

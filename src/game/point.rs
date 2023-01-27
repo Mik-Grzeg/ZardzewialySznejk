@@ -1,5 +1,5 @@
-use std::ops;
 use super::consts::*;
+use std::ops;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -34,7 +34,7 @@ impl TryFrom<String> for Direction {
             "left" => Ok(Self::Left),
             "right" => Ok(Self::Right),
             "up" => Ok(Self::Up),
-            "Down" => Ok(Self::Down),
+            "down" => Ok(Self::Down),
             _ => Err(DirectionError::ConversionFromStringError(value)),
         }
     }
@@ -94,7 +94,6 @@ impl ops::AddAssign<Direction> for Point {
 #[cfg(test)]
 mod tests {
     use super::{Direction, Point, BOARD_SIZE};
-
 
     #[test]
     fn test_point_add_assign_increase_y_in_bounds() {

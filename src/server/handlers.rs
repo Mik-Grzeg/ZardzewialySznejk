@@ -1,5 +1,5 @@
-use actix_web::{get, post, error, web, App, Result};
 use crate::game::Direction;
+use actix_web::{error, get, post, web, Result};
 
 #[get("/snake")]
 async fn get_game_state() -> Result<String> {
@@ -8,10 +8,8 @@ async fn get_game_state() -> Result<String> {
 
 #[post("/snake/:{direction}")]
 async fn post_direction_command(path: web::Path<String>) -> Result<String> {
-    let direction = Direction::try_from(path.into_inner())
-        .map_err(|e| error::ErrorBadRequest(e))?;
-
-
+    let _direction =
+        Direction::try_from(path.into_inner()).map_err(error::ErrorBadRequest)?;
 
     todo!()
 }
