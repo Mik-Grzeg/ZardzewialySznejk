@@ -1,41 +1,24 @@
 use super::consts::*;
+use super::point::*;
 use std::collections::VecDeque;
-use std::ops;
+use std::sync::RwLock;
 use thiserror::Error;
+use tracing::{trace};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Direction {
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
-impl Direction {
-    fn opposite(&self) -> Self {
-        match self {
-            Self::Up => Self::Down,
-            Self::Down => Self::Up,
-            Self::Left => Self::Right,
-            Self::Right => Self::Left,
-        }
-    }
-}
-
-impl From<Direction> for i16 {
-    fn from(dir: Direction) -> Self {
-        match dir {
-            Direction::Up => -1,
-            Direction::Down => 1,
-            Direction::Right => 1,
-            Direction::Left => -1,
-        }
-    }
-}
-
+#[derive(Debug)]
 struct SnakeIncreaseCommand {}
 
-struct Snake {
+#[derive(Debug)]
+pub struct RwLockedSnake(RwLock<Snake>);
+
+impl Default for RwLockedSnake {
+    fn default() -> Self {
+        Self(RwLock::new(Snake::default()))
+    }
+}
+
+#[derive(Debug)]
+pub struct Snake {
     body: VecDeque<Point>,
     increase_snake: Option<SnakeIncreaseCommand>,
     head_current_direction: Direction,
@@ -65,7 +48,7 @@ impl Default for Snake {
 }
 
 #[derive(Error, Debug, PartialEq)]
-enum SnakeError {
+pub enum SnakeError {
 
     #[error("Snake collided with its tail")]
     BitOffHisTail,
@@ -79,7 +62,7 @@ impl Snake {
         Self::default()
     }
 
-    fn test_if_bitten_itself(&self, point: &Point) -> Result<(), SnakeError> {
+    fn check_if_bitten_itself(&self, point: &Point) -> Result<(), SnakeError> {
         match self.body.contains(point) {
             false => Ok(()),
             true => Err(SnakeError::BitOffHisTail),
@@ -97,7 +80,9 @@ impl Snake {
         new_segment_or_err
     }
 
-    fn make_move(&mut self, direction: Option<Direction>) -> Result<(), SnakeError> {
+
+    #[tracing::instrument(skip(self))]
+    pub fn make_move(&mut self, direction: Option<Direction>) -> Result<(), SnakeError> {
         let direction = direction.unwrap_or(self.head_current_direction);
         if direction.opposite() == self.head_current_direction {
             return Ok(());
@@ -110,8 +95,10 @@ impl Snake {
 
         self.head_current_direction = direction;
 
-        let result_if_bite = self.test_if_bitten_itself(&new_segment_to_insert);
+        let result_if_bite = self.check_if_bitten_itself(&new_segment_to_insert);
         self.body.push_front(new_segment_to_insert);
+
+        trace!("Head moved to {:?}", new_segment_to_insert);
 
         result_if_bite
     }
@@ -127,98 +114,18 @@ impl Snake {
     fn increase_snake_command(&mut self) {
         self.increase_snake = Some(SnakeIncreaseCommand {})
     }
-}
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct Point {
-    x: u16,
-    y: u16,
-}
-
-fn add_with_respect_to_bounds(coordinate: u16, move_with_dir: Direction) -> u16 {
-    // TODO change it so it's cleaner
-    let coordinate_change: i16 = i16::from(move_with_dir);
-    if coordinate_change == -1 {
-        coordinate.checked_sub(1).unwrap_or(BOARD_SIZE - 1)
-    } else if coordinate + 1 >= BOARD_SIZE {
-        0
-    } else {
-        coordinate + coordinate_change as u16
+    pub fn get_current_direction(&self) -> Direction {
+        self.head_current_direction
     }
 }
 
-impl Point {
-    fn set_coords(&mut self, (x, y): (u16, u16)) {
-        self.x = x;
-        self.y = y;
-    }
-
-    fn get_coords(&self) -> (u16, u16) {
-        (self.x, self.y)
-    }
-}
-
-impl ops::AddAssign<Direction> for Point {
-    fn add_assign(&mut self, rhs: Direction) {
-        let coordinate_ref = match rhs {
-            Direction::Up | Direction::Down => &mut self.y,
-            Direction::Left | Direction::Right => &mut self.x,
-        };
-
-        *coordinate_ref = add_with_respect_to_bounds(*coordinate_ref, rhs);
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use crate::game::snake::{SnakeError, BOARD_SIZE};
-
     use super::{get_center_of_board_coordinates, Direction, Point, Snake};
 
-    #[test]
-    fn test_point_add_assign_increase_y_in_bounds() {
-        let direction = Direction::Down;
-
-        let mut point = Point { x: 0, y: 6 };
-        point += direction;
-
-        assert_eq!(point.y, 7);
-        assert_eq!(point.x, 0);
-    }
-
-    #[test]
-    fn test_point_add_assign_increase_x_in_bounds() {
-        let direction = Direction::Left;
-
-        let mut point = Point { x: 5, y: 0 };
-        point += direction;
-
-        assert_eq!(point.y, 0);
-        assert_eq!(point.x, 4);
-    }
-
-    #[test]
-    fn test_point_add_assign_increase_out_of_lower_bound() {
-        let direction = Direction::Left;
-
-        let mut point = Point { x: 0, y: 0 };
-        point += direction;
-
-        assert_eq!(point.x, BOARD_SIZE as u16 - 1);
-    }
-
-    #[test]
-    fn test_point_add_assign_increase_out_of_upper_bound() {
-        let direction = Direction::Down;
-
-        let mut point = Point {
-            x: 0,
-            y: BOARD_SIZE as u16 - 1,
-        };
-        point += direction;
-
-        assert_eq!(point.y, 0);
-    }
 
     #[test]
     fn test_snake_making_moves() {

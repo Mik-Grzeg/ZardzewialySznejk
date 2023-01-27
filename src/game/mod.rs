@@ -1,2 +1,0 @@
-mod consts;
-mod snake;
