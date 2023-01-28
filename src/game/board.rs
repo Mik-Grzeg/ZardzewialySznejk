@@ -1,13 +1,9 @@
-use super::{consts::*, point};
-use super::point::{Point};
-use rand::seq::{SliceRandom, IteratorRandom};
+use super::consts::*;
+use super::point::Point;
 
-use std::{
-    fmt::{Display, Write},
-};
-const CANVAS_SIZE_X: usize = BOARD_SIZE_X as usize + 2 ;
-const CANVAS_SIZE_Y: usize = BOARD_SIZE_Y as usize + 2 ;
-
+use std::fmt::{Display, Write};
+const CANVAS_SIZE_X: usize = BOARD_SIZE_X as usize + 2;
+const CANVAS_SIZE_Y: usize = BOARD_SIZE_Y as usize + 2;
 
 const SE: char = '┌';
 const SW: char = '┐';
@@ -62,8 +58,8 @@ pub enum CellSymbol {
 }
 
 impl CellSymbol {
-    fn to_char(&self) -> char {
-        match *self {
+    fn to_char(self) -> char {
+        match self {
             CellSymbol::Board => ' ',
             CellSymbol::Snake => '#',
             CellSymbol::SnakeHead => '@',
@@ -82,7 +78,7 @@ impl Display for CellSymbol {
 }
 
 pub fn get_center_of_board_coordinates() -> Point {
-    let y =BOARD_SIZE_Y / 2 + (BOARD_SIZE_Y % 2 != 0) as u16 - 1;
+    let y = BOARD_SIZE_Y / 2 + (BOARD_SIZE_Y % 2 != 0) as u16 - 1;
     let x = BOARD_SIZE_X / 2 + (BOARD_SIZE_X % 2 != 0) as u16 - 1;
 
     Point::new(y, x)
@@ -91,14 +87,10 @@ pub fn get_center_of_board_coordinates() -> Point {
 pub fn generate_points_pool() -> Vec<Point> {
     (0..BOARD_SIZE_Y)
         .into_iter()
-        .map(|y| {
+        .flat_map(|y| {
             let copy_y = y;
-            (0..BOARD_SIZE_X)
-                .map(move |x| {
-                    Point { x,  y: copy_y}
-                })
+            (0..BOARD_SIZE_X).map(move |x| Point { x, y: copy_y })
         })
-        .flatten()
         .collect()
 }
 
@@ -106,7 +98,6 @@ type Canvas = [[CellSymbol; CANVAS_SIZE_X]; CANVAS_SIZE_Y];
 
 #[derive(Debug)]
 pub struct Board {
-
     // This could be a RwLock,
     // so it would avoid reading partial updates
     canvas: Canvas,
@@ -143,7 +134,6 @@ impl Default for Board {
             // set '|' for vertical walls
             canvas[i][0] = CellSymbol::Wall(Wall::NS);
             canvas[i][CANVAS_SIZE_X - 1] = CellSymbol::Wall(Wall::NS);
-
         }
 
         for i in 1..(CANVAS_SIZE_X - 1) {
@@ -165,8 +155,7 @@ impl Default for Board {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pretty_assertions::{assert_eq, assert_ne};
-
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_default_cavas() {
@@ -201,4 +190,3 @@ mod tests {
         assert_eq!(raw_canvas, generated_board_str.as_str());
     }
 }
-

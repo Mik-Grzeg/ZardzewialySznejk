@@ -1,36 +1,39 @@
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::TryRecvError;
-use crate::server;
-use super::fruit::Fruit;
-use std::thread;
-use super::board::{Board, CellSymbol, generate_points_pool};
+use super::board::{generate_points_pool, Board, CellSymbol};
 use super::consts::*;
+use super::fruit::Fruit;
 use super::point::{Direction, Point};
 use super::snake::{Snake, SnakeError};
+use crate::server;
 use std::collections::HashMap;
 use std::sync::RwLock;
-use tokio::task;
-use tokio::signal;
 
+use tokio::signal;
+use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::TryRecvError;
+
+use super::commands::{MoveCommandIssuer, MoveCommandReceiver};
 
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
-use async_trait::async_trait;
 use std::sync::Arc;
-use thiserror::Error;
+
 use tokio::sync::mpsc;
 use tokio::time::{interval_at, Duration, Instant, Interval, MissedTickBehavior};
-use tracing::{debug, error, info, trace, warn};
-use super::movement::OrderMove;
-use super::commands::{MoveCommandReceiver, MoveCommandIssuer};
+use tracing::{debug, error, info, warn};
 
 const MOVE_COMMAND_CHANNEL_SIZE: usize = 1000;
 
-pub async fn game_loop(terminal_signal_tx: broadcast::Sender<()>, command_receiver: MoveCommandReceiver, order_move: Arc<RwLock<MoveCommandIssuer>>, board: Arc<RwLock<Board>>, fps: f32) {
+pub async fn game_loop(
+    terminal_signal_tx: broadcast::Sender<()>,
+    command_receiver: MoveCommandReceiver,
+    order_move: Arc<RwLock<MoveCommandIssuer>>,
+    board: Arc<RwLock<Board>>,
+    fps: f32,
+) {
     let mut game = Game::new(command_receiver, Arc::clone(&board), fps);
     loop {
         let rx = terminal_signal_tx.subscribe();
-        tokio::select!{
+        tokio::select! {
             _ = game.start(rx) => {
                 let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
 
@@ -42,7 +45,7 @@ pub async fn game_loop(terminal_signal_tx: broadcast::Sender<()>, command_receiv
             }
             _ = signal::ctrl_c() => {
                 if let Err(err) = terminal_signal_tx.send(()) {
-                    error!("{}", err)
+                    warn!("Termination signal {}", err)
                 };
                 break;
             }
@@ -60,14 +63,23 @@ pub async fn new_game(fps: f32) {
 
     let server_running = server::run(Arc::clone(&order_move), Arc::clone(&board));
 
-    // termination signal channel
+    // Termination signal channel
     let (terminal_signal_tx, _) = broadcast::channel(1);
-    let tx_for_server =  terminal_signal_tx.clone();
+    let tx_for_server = terminal_signal_tx.clone();
 
+    // Spawn thread with game loop
     let game_loop_task = tokio::spawn(async move {
-        game_loop(terminal_signal_tx, command_recv.into(), order_move, board, fps).await
+        game_loop(
+            terminal_signal_tx,
+            command_recv.into(),
+            order_move,
+            board,
+            fps,
+        )
+        .await
     });
 
+    // End program when one of its components is done
     tokio::select! {
         _ = server_running => {
             if let Err(err) = tx_for_server.send(()) {
@@ -88,7 +100,6 @@ fn create_game_action_interval(spf: f32) -> Interval {
     interval
 }
 
-
 #[tracing::instrument(skip(rng))]
 fn pick_move_direction_based_on_probabilities(
     issued_commands: &mut HashMap<Direction, u32>,
@@ -108,11 +119,10 @@ pub struct Game {
     score: u32,
     snake: Snake,
     fruits: Vec<Fruit>,
-    pub board: Arc<RwLock<Board>>,
+    board: Arc<RwLock<Board>>,
     fps: f32,
     move_command_manager_recv: MoveCommandReceiver,
 }
-
 
 impl Game {
     pub async fn start(&mut self, mut shutdown_signal_recv: broadcast::Receiver<()>) {
@@ -123,7 +133,7 @@ impl Game {
         loop {
             match shutdown_signal_recv.try_recv() {
                 Ok(_) | Err(TryRecvError::Closed) => break,
-                _ => {},
+                _ => {}
             };
 
             self.next_frame();
@@ -131,55 +141,66 @@ impl Game {
             self.control_fruits(&points_pool);
             tokio::select! {
                 _ = interval.tick() => {
-                    if let None = self.control_movement(&mut direction_command_counters) {
+                    if self.control_movement(&mut direction_command_counters).is_none() {
                         break
                     }
                 }
-                _ = self.move_command_manager_recv.wait_for_command_and_act(&mut direction_command_counters, &self.snake.get_current_direction()) => { }
+                _ = self.move_command_manager_recv.wait_for_command_and_act(&mut direction_command_counters, self.snake.get_current_direction()) => { }
             }
             self.check_if_snake_ate_fruit();
         }
     }
 
-    fn control_movement(&mut self, mut direction_command_counters: &mut HashMap<Direction, u32>) -> Option<()> {
-        let direction = pick_move_direction_based_on_probabilities(&mut direction_command_counters, &mut thread_rng());
+    fn control_movement(
+        &mut self,
+        direction_command_counters: &mut HashMap<Direction, u32>,
+    ) -> Option<()> {
+        let direction = pick_move_direction_based_on_probabilities(
+            direction_command_counters,
+            &mut thread_rng(),
+        );
 
         match self.snake.make_move(direction) {
             Err(SnakeError::BitOffHisTail) => {
-                info!("The player bit off his tails, ended up scoring: {}", self.score);
+                info!(
+                    "The player bit off his tails, ended up scoring: {}",
+                    self.score
+                );
                 None
-            },
-            Ok(_) => {
-                Some(())
-            },
-            Err(SnakeError::BodyIsEmpty) => { // It won't get here since, there is no chance
-                                              // that the body will be emptied
+            }
+            Ok(_) => Some(()),
+            Err(SnakeError::BodyIsEmpty) => {
+                // It won't get here since, there is no chance
+                // that the body will be empty
                 unreachable!()
-            },
+            }
         }
     }
 
-    fn control_fruits(&mut self, points_pool: &Vec<Point>) {
+    fn control_fruits(&mut self, points_pool: &[Point]) {
         if self.fruits.len() < 5 {
             let occupied_snake = self.snake.get_occupied_points();
+
+            // Get possible points to place a new fruit
             let next_frame_filtered_out_cells = points_pool
                 .iter()
                 .filter(|&p| !occupied_snake.contains(p))
                 .collect();
 
-            if let Some(fruit) = Fruit::try_spawn_at_random_place(&next_frame_filtered_out_cells, self.fruits.len()) {
+            // Try spawning a new fruit
+            if let Some(fruit) =
+                Fruit::try_spawn_at_random_place(&next_frame_filtered_out_cells, self.fruits.len())
+            {
                 self.fruits.push(fruit);
             };
         }
     }
 
     fn check_if_snake_ate_fruit(&mut self) {
-        debug!("length of fruits before retain: {}", self.fruits.len());
-
         if remove_eaten_fruits(&mut self.fruits, self.snake.head().unwrap()) {
             self.snake.increase_snake_command();
+            self.score += 1;
         }
-        debug!("length of fruits before retain: {}| HEAD: {:?}", self.fruits.len(), self.snake.head().unwrap());
     }
 
     fn next_frame(&mut self) {
@@ -201,45 +222,49 @@ impl Game {
         }
     }
 
-    fn new(move_command_manager_recv: MoveCommandReceiver, board: Arc<RwLock<Board>>, fps: f32) -> Self {
+    fn new(
+        move_command_manager_recv: MoveCommandReceiver,
+        board: Arc<RwLock<Board>>,
+        fps: f32,
+    ) -> Self {
         Self {
             move_command_manager_recv,
             fps,
             score: 0,
             snake: Snake::default(),
             fruits: vec![],
-            board
+            board,
         }
     }
 
     fn convert_fps_to_spf(&self) -> f32 {
-        1.0 / self.fps as f32
+        1.0 / self.fps
     }
 }
 
 fn remove_eaten_fruits(fruits: &mut Vec<Fruit>, actual_point: &Point) -> bool {
     let mut removed = false;
-    fruits
-        .retain(|fruit| {
-            if fruit.point == *actual_point {
-                removed = true;
-                false
-            } else {
-                true
-            }
-        });
+    fruits.retain(|fruit| {
+        if fruit.point == *actual_point {
+            removed = true;
+            false
+        } else {
+            true
+        }
+    });
     removed
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
 
     use super::*;
 
     #[test]
     fn test_removing_fruits_on_eat() {
-        let mut fruits = vec![Fruit { point: Point::new(2, 5) }];
+        let mut fruits = vec![Fruit {
+            point: Point::new(2, 5),
+        }];
         let snake_head = Point::new(2, 5);
 
         let removed = remove_eaten_fruits(&mut fruits, &snake_head);
@@ -250,7 +275,9 @@ mod tests {
 
     #[test]
     fn test_not_removing_fruits_on_move_without_eating() {
-        let mut fruits = vec![Fruit { point: Point::new(2, 5) }];
+        let mut fruits = vec![Fruit {
+            point: Point::new(2, 5),
+        }];
         let snake_head = Point::new(3, 5);
 
         let removed = remove_eaten_fruits(&mut fruits, &snake_head);

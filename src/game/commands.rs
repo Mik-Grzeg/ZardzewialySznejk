@@ -1,36 +1,33 @@
+use super::Direction;
+
+use movement::*;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use super::Direction;
-use tracing::{trace, debug, info, warn, error};
-use async_trait::async_trait;
-use movement::*;
+use tracing::{debug, trace, warn};
 
 pub mod movement {
-    use std::fmt::Debug;
-    use async_trait::async_trait;
-    use tokio::sync::mpsc::error::SendError;
-    use thiserror::Error;
     use super::Direction;
 
-    #[async_trait]
+    use std::fmt::Debug;
+    use thiserror::Error;
+    use tokio::sync::mpsc::error::TrySendError;
+
     pub trait OrderMove: Send + Sync + Debug {
-        async fn issue_move(&self, direction: Direction) -> Result<(), OrderError>;
+        fn issue_move(&self, direction: Direction) -> Result<(), OrderError>;
     }
 
     #[derive(Error, Debug)]
     pub enum OrderError {
         #[error("Unable to issue new movement command `{0}`")]
-        IssueMovement(String)
+        IssueMovement(String),
     }
 
-    impl<T: Debug> From<SendError<T>> for OrderError {
-        fn from(send_err: SendError<T>) -> Self {
+    impl<T: Debug> From<TrySendError<T>> for OrderError {
+        fn from(send_err: TrySendError<T>) -> Self {
             Self::IssueMovement(send_err.to_string())
         }
     }
 }
-
-
 
 #[derive(Debug)]
 pub struct MoveCommandReceiver {
@@ -44,13 +41,20 @@ impl From<mpsc::Receiver<Direction>> for MoveCommandReceiver {
 }
 
 impl MoveCommandReceiver {
-    pub async fn wait_for_command_and_act(&mut self, direction_command_counters: &mut HashMap<Direction, u32>, current_direction: &Direction) {
+    pub async fn wait_for_command_and_act(
+        &mut self,
+        direction_command_counters: &mut HashMap<Direction, u32>,
+        current_direction: &Direction,
+    ) {
         match self.command_rx.recv().await {
             Some(c) => {
                 if c == current_direction.opposite() {
-                    return
+                    return;
                 }
-                direction_command_counters.entry(c).and_modify(|counter| *counter +=  1).or_insert(1);
+                direction_command_counters
+                    .entry(c)
+                    .and_modify(|counter| *counter += 1)
+                    .or_insert(1);
                 debug!("Received a move command from user {:?}", c);
             }
             None => {
@@ -77,14 +81,10 @@ impl From<mpsc::Sender<Direction>> for MoveCommandIssuer {
     }
 }
 
-#[async_trait]
 impl OrderMove for MoveCommandIssuer {
-    #[tracing::instrument]
-    async fn issue_move(&self, direction: Direction) -> Result<(), OrderError> {
+    fn issue_move(&self, direction: Direction) -> Result<(), OrderError> {
         trace!("Issueing new move: {:?}", direction);
-        self.command_sender
-            .send(direction)
-            .await?;
+        self.command_sender.try_send(direction)?;
 
         Ok(())
     }

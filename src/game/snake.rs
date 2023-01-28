@@ -1,22 +1,13 @@
-use super::consts::*;
 use super::board::get_center_of_board_coordinates;
+
 use super::point::*;
 use std::collections::VecDeque;
-use std::sync::RwLock;
+
 use thiserror::Error;
 use tracing::trace;
 
 #[derive(Debug)]
-pub struct SnakeIncreaseCommand {}
-
-#[derive(Debug)]
-pub struct RwLockedSnake(RwLock<Snake>);
-
-impl Default for RwLockedSnake {
-    fn default() -> Self {
-        Self(RwLock::new(Snake::default()))
-    }
-}
+struct SnakeIncreaseCommand {}
 
 #[derive(Debug)]
 pub struct Snake {
@@ -26,17 +17,11 @@ pub struct Snake {
     orphaned_tail: Point,
 }
 
-
 impl Default for Snake {
     fn default() -> Self {
         let center = get_center_of_board_coordinates();
 
-        let body: VecDeque<Point> = (0..3)
-            .map(|i| Point::new(
-                center.y + i,
-                center.x,
-            ))
-            .collect();
+        let body: VecDeque<Point> = (0..3).map(|i| Point::new(center.y + i, center.x)).collect();
 
         Snake {
             orphaned_tail: body.back().copied().unwrap(),
@@ -57,10 +42,6 @@ pub enum SnakeError {
 }
 
 impl Snake {
-    fn new() -> Self {
-        Self::default()
-    }
-
     fn check_if_bitten_itself(&self, point: &Point) -> Result<(), SnakeError> {
         match self.body.contains(point) {
             false => Ok(()),
@@ -68,17 +49,15 @@ impl Snake {
         }
     }
 
-    pub fn check_if_given_point_elapses(&self, point: &Point) -> bool {
-        self.body.contains(point)
-    }
-
     fn prepare_new_segment(&mut self) -> Result<Point, SnakeError> {
+        // If there was no command to increase snake, remove last segment and return it
+        // otherwise copy the last segment and return it
         let new_segment_or_err = match self.increase_snake {
             None => {
                 let old_tail = self.body.pop_back();
                 self.orphaned_tail = old_tail.unwrap();
                 old_tail
-            },
+            }
             Some(_) => self.body.back().copied(),
         }
         .ok_or(SnakeError::BodyIsEmpty);
@@ -96,7 +75,9 @@ impl Snake {
 
         let mut new_segment_to_insert = self.prepare_new_segment()?;
 
+        // Set new head coordinations
         new_segment_to_insert.set_coords(self.head().ok_or(SnakeError::BodyIsEmpty)?.get_coords());
+        // Move in specific direction
         new_segment_to_insert += direction;
 
         self.head_current_direction = direction;
@@ -128,10 +109,6 @@ impl Snake {
         &self.body
     }
 
-    fn size(&self) -> usize {
-        self.body.len()
-    }
-
     pub fn increase_snake_command(&mut self) {
         self.increase_snake = Some(SnakeIncreaseCommand {})
     }
@@ -139,21 +116,25 @@ impl Snake {
     pub fn get_current_direction(&self) -> &Direction {
         &self.head_current_direction
     }
+
+    #[cfg(test)]
+    fn size(&self) -> usize {
+        self.body.len()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{get_center_of_board_coordinates, Direction, Point, Snake};
-    use crate::game::snake::{SnakeError};
     use crate::game::consts::*;
-    use pretty_assertions::{assert_eq, assert_ne};
-
+    use crate::game::snake::SnakeError;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_snake_making_moves() {
         let moves = [Direction::Right, Direction::Down, Direction::Up];
         let expected = [Ok(()), Ok(()), Ok(())];
-        let mut snake = Snake::new();
+        let mut snake = Snake::default();
 
         moves
             .into_iter()
@@ -164,14 +145,11 @@ mod tests {
 
     #[test]
     fn test_snake_moving_without_passed_direction() {
-        let mut snake = Snake::new();
+        let mut snake = Snake::default();
         let move_result = snake.make_move(None);
         let center = get_center_of_board_coordinates();
 
-        let expected_point = Point::new(
-            center.y - 1,
-            center.x,
-        );
+        let expected_point = Point::new(center.y - 1, center.x);
 
         assert_eq!(move_result.err(), None);
         assert_eq!(*snake.head().unwrap(), expected_point);
@@ -179,12 +157,9 @@ mod tests {
 
     #[test]
     fn test_snake_head_positions_while_moving() {
-        let mut snake = Snake::new();
+        let mut snake = Snake::default();
         let center = get_center_of_board_coordinates();
-        let mut point = Point::new(
-            center.y,
-            center.x,
-        );
+        let mut point = Point::new(center.y, center.x);
 
         assert_eq!(*snake.head().unwrap(), point);
 
@@ -202,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_snake_head_positions_while_moved_outside_of_bounds() {
-        let mut snake = Snake::new();
+        let mut snake = Snake::default();
         let center = get_center_of_board_coordinates();
 
         (center.x..BOARD_SIZE_X)
@@ -216,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_if_snake_bites_itself_results_in_error() {
-        let mut snake = Snake::new();
+        let mut snake = Snake::default();
 
         // Increase size of the size, so its length is 5. It allows snake to bite itself
         snake.increase_snake_command();
@@ -234,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_if_snake_size_increasing_command_adds_new_segments() {
-        let mut snake = Snake::new();
+        let mut snake = Snake::default();
 
         assert_eq!(snake.size(), 3);
 

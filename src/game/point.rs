@@ -70,10 +70,7 @@ pub struct Point {
 
 impl Point {
     pub fn new(y: u16, x: u16) -> Self {
-        Self {
-            y,
-            x,
-        }
+        Self { y, x }
     }
 
     pub fn set_coords(&mut self, (y, x): (u16, u16)) {
@@ -88,24 +85,22 @@ impl Point {
 
 impl ops::AddAssign<Direction> for Point {
     fn add_assign(&mut self, rhs: Direction) {
-         match rhs {
+        match rhs {
             Direction::Up | Direction::Down => {
                 self.y = add_with_respect_to_bounds(self.y, rhs, BOARD_SIZE_Y);
-            },
+            }
             Direction::Left | Direction::Right => {
                 self.x = add_with_respect_to_bounds(self.x, rhs, BOARD_SIZE_X);
-            },
+            }
         };
-
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Direction, Point};
     use super::super::consts::*;
-    use pretty_assertions::{assert_eq, assert_ne};
-
+    use super::{Direction, Point};
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_point_add_assign_increase_y_in_bounds() {
@@ -136,17 +131,14 @@ mod tests {
         let mut point = Point::new(0, 0);
         point += direction;
 
-        assert_eq!(point.x, BOARD_SIZE_X as u16 - 1);
+        assert_eq!(point.x, BOARD_SIZE_X - 1);
     }
 
     #[test]
     fn test_point_add_assign_increase_out_of_upper_bound() {
         let direction = Direction::Down;
 
-        let mut point = Point::new(
-            BOARD_SIZE_Y as u16 - 1,
-            0
-        );
+        let mut point = Point::new(BOARD_SIZE_Y - 1, 0);
         point += direction;
 
         assert_eq!(point.y, 0);

@@ -1,12 +1,12 @@
 mod board;
+mod commands;
 mod consts;
+mod fruit;
 mod point;
 mod runner;
-mod commands;
 mod snake;
-mod fruit;
 
-pub use point::Direction;
 pub use board::Board;
-pub use runner::new_game;
 pub use commands::movement;
+pub use point::Direction;
+pub use runner::new_game;
