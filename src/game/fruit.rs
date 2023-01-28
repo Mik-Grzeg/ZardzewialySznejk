@@ -1,37 +1,27 @@
-use rand::{prelude::Distribution, distributions::Standard, seq::SliceRandom, thread_rng};
+use rand::{prelude::Distribution, distributions::{Standard, Uniform}, seq::SliceRandom, thread_rng};
+use rand::Rng;
+
 
 use super::point::Point;
 
-enum Drawer {
-    Fruit,
-    Nothing,
-}
-
-impl Distribution<Drawer> for Standard {
-    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Drawer {
-        match rng.gen::<bool>()  {
-            true => Drawer::Fruit,
-            false => Drawer::Nothing
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Fruit {
-    point: Point
+    pub point: Point
 }
 
 impl Fruit {
-    pub fn try_spawn_at_random_place(filtered_out_occupied_points: &Vec<Point>) -> Option<Self> {
-        match rand::random() {
-            Drawer::Fruit => {
-                let point = *filtered_out_occupied_points.choose(&mut thread_rng())?;
+    pub fn try_spawn_at_random_place(filtered_out_occupied_points: &Vec<&Point>, current_number_of_fruits: usize) -> Option<Self> {
 
-                Some(Self {
-                    point
-                })
-            },
-            Drawer::Nothing => None
+        // Lower the chance of spawning new fruit if there is already plenty of them on the board
+        if thread_rng().gen_range(0.0..=1.0) < 0.08 / (current_number_of_fruits + 1) as f32  {
+            let point = **filtered_out_occupied_points.choose(&mut thread_rng())?;
+
+            Some(Self {
+                point
+            })
+        } else {
+            None
         }
+
     }
 }

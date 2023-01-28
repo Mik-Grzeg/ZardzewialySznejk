@@ -26,46 +26,57 @@ use super::commands::{MoveCommandReceiver, MoveCommandIssuer};
 
 const MOVE_COMMAND_CHANNEL_SIZE: usize = 1000;
 
-pub async fn new_game(fps: f32) {
-    let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
-    let command_receiver = command_recv.into();
+pub async fn game_loop(terminal_signal_tx: broadcast::Sender<()>, command_receiver: MoveCommandReceiver, order_move: Arc<RwLock<MoveCommandIssuer>>, board: Arc<RwLock<Board>>, fps: f32) {
+    let mut game = Game::new(command_receiver, Arc::clone(&board), fps);
+    loop {
+        let rx = terminal_signal_tx.subscribe();
+        tokio::select!{
+            _ = game.start(rx) => {
+                let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
 
+                let command_receiver = command_recv.into();
+                order_move.write().unwrap().set_issuer(command_sender);
+                *board.write().unwrap() = Board::default();
+
+                game = Game::new(command_receiver, Arc::clone(&board), fps);
+            }
+            _ = signal::ctrl_c() => {
+                if let Err(err) = terminal_signal_tx.send(()) {
+                    error!("{}", err)
+                };
+                break;
+            }
+        }
+    }
+}
+
+pub async fn new_game(fps: f32) {
+    // Movement command channels
+    let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
+
+    // Arc<RwLock<Board>> since these variables/objects are read from other thread
     let board = Arc::new(RwLock::new(Board::default()));
     let order_move = Arc::new(RwLock::new(MoveCommandIssuer::from(command_sender)));
 
-    let mut game = Game::new(command_receiver, Arc::clone(&board), fps);
+    let server_running = server::run(Arc::clone(&order_move), Arc::clone(&board));
 
+    // termination signal channel
     let (terminal_signal_tx, _) = broadcast::channel(1);
     let tx_for_server =  terminal_signal_tx.clone();
 
-    let server_running = server::run(Arc::clone(&order_move), Arc::clone(&board));
-
-    let game_loop = tokio::spawn(async move {
-        loop {
-            let rx = terminal_signal_tx.subscribe();
-            tokio::select!{
-                _ = game.start(rx) => {
-                    let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
-
-                    let command_receiver = command_recv.into();
-                    order_move.write().unwrap().set_issuer(command_sender);
-                    *board.write().unwrap() = Board::default();
-
-                    game = Game::new(command_receiver, Arc::clone(&board), fps);
-                }
-                _ = signal::ctrl_c() => {
-                    terminal_signal_tx.send(());
-                    break;
-                }
-            }
-        }
+    let game_loop_task = tokio::spawn(async move {
+        game_loop(terminal_signal_tx, command_recv.into(), order_move, board, fps).await
     });
 
     tokio::select! {
         _ = server_running => {
-            tx_for_server.send(());
+            if let Err(err) = tx_for_server.send(()) {
+                error!("{}", err)
+            };
         }
-        _ = game_loop => {}
+        _ = game_loop_task => {
+            warn!("Game loop finished");
+        }
     }
 }
 
@@ -103,12 +114,11 @@ pub struct Game {
 }
 
 
-
 impl Game {
     pub async fn start(&mut self, mut shutdown_signal_recv: broadcast::Receiver<()>) {
         let mut interval = create_game_action_interval(self.convert_fps_to_spf());
         let mut direction_command_counters: HashMap<Direction, u32> = HashMap::with_capacity(3);
-        let filtered_out_occupied_points: Vec<Point> = generate_points_pool();
+        let points_pool: Vec<Point> = generate_points_pool();
 
         loop {
             match shutdown_signal_recv.try_recv() {
@@ -118,34 +128,66 @@ impl Game {
 
             self.next_frame();
 
-            filtered_out_occupied_points.filter();
-            if let Some(fruit) = Fruit::try_spawn_at_random_place(&filtered_out_occupied_points) {
-                self.fruits.push(fruit);
-            };
-
+            self.control_fruits(&points_pool);
             tokio::select! {
                 _ = interval.tick() => {
-                    let direction = pick_move_direction_based_on_probabilities(&mut direction_command_counters, &mut thread_rng());
-
-                    match self.snake.make_move(direction) {
-                        Err(SnakeError::BitOffHisTail) => {
-                            info!("The player bit off his tails, ended up scoring: {}", self.score);
-                            break;
-                        },
-                        Ok(_) => {},
-                        Err(SnakeError::BodyIsEmpty) => { // It won't get here since, there is no chance
-                                                          // that the body will be emptied
-                            error!("Technically this branch is impossible");
-                        },
+                    if let None = self.control_movement(&mut direction_command_counters) {
+                        break
                     }
                 }
                 _ = self.move_command_manager_recv.wait_for_command_and_act(&mut direction_command_counters, &self.snake.get_current_direction()) => { }
             }
+            self.check_if_snake_ate_fruit();
         }
+    }
+
+    fn control_movement(&mut self, mut direction_command_counters: &mut HashMap<Direction, u32>) -> Option<()> {
+        let direction = pick_move_direction_based_on_probabilities(&mut direction_command_counters, &mut thread_rng());
+
+        match self.snake.make_move(direction) {
+            Err(SnakeError::BitOffHisTail) => {
+                info!("The player bit off his tails, ended up scoring: {}", self.score);
+                None
+            },
+            Ok(_) => {
+                Some(())
+            },
+            Err(SnakeError::BodyIsEmpty) => { // It won't get here since, there is no chance
+                                              // that the body will be emptied
+                unreachable!()
+            },
+        }
+    }
+
+    fn control_fruits(&mut self, points_pool: &Vec<Point>) {
+        if self.fruits.len() < 5 {
+            let occupied_snake = self.snake.get_occupied_points();
+            let next_frame_filtered_out_cells = points_pool
+                .iter()
+                .filter(|&p| !occupied_snake.contains(p))
+                .collect();
+
+            if let Some(fruit) = Fruit::try_spawn_at_random_place(&next_frame_filtered_out_cells, self.fruits.len()) {
+                self.fruits.push(fruit);
+            };
+        }
+    }
+
+    fn check_if_snake_ate_fruit(&mut self) {
+        debug!("length of fruits before retain: {}", self.fruits.len());
+
+        if remove_eaten_fruits(&mut self.fruits, self.snake.head().unwrap()) {
+            self.snake.increase_snake_command();
+        }
+        debug!("length of fruits before retain: {}| HEAD: {:?}", self.fruits.len(), self.snake.head().unwrap());
     }
 
     fn next_frame(&mut self) {
         let mut board = self.board.write().unwrap();
+
+        self.fruits
+            .iter()
+            .for_each(|f| (*board).change_cell_symbol(&f.point, CellSymbol::Fruit));
 
         // Override new head cell with snake head symbol
         (*board).change_cell_symbol(self.snake.head().unwrap(), CellSymbol::SnakeHead);
@@ -165,6 +207,7 @@ impl Game {
             fps,
             score: 0,
             snake: Snake::default(),
+            fruits: vec![],
             board
         }
     }
@@ -172,6 +215,47 @@ impl Game {
     fn convert_fps_to_spf(&self) -> f32 {
         1.0 / self.fps as f32
     }
-
 }
 
+fn remove_eaten_fruits(fruits: &mut Vec<Fruit>, actual_point: &Point) -> bool {
+    let mut removed = false;
+    fruits
+        .retain(|fruit| {
+            if fruit.point == *actual_point {
+                removed = true;
+                false
+            } else {
+                true
+            }
+        });
+    removed
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+
+    use super::*;
+
+    #[test]
+    fn test_removing_fruits_on_eat() {
+        let mut fruits = vec![Fruit { point: Point::new(2, 5) }];
+        let snake_head = Point::new(2, 5);
+
+        let removed = remove_eaten_fruits(&mut fruits, &snake_head);
+
+        assert!(removed);
+        assert_eq!(fruits.len(), 0)
+    }
+
+    #[test]
+    fn test_not_removing_fruits_on_move_without_eating() {
+        let mut fruits = vec![Fruit { point: Point::new(2, 5) }];
+        let snake_head = Point::new(3, 5);
+
+        let removed = remove_eaten_fruits(&mut fruits, &snake_head);
+
+        assert!(!removed);
+        assert_eq!(fruits.len(), 1)
+    }
+}

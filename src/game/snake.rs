@@ -1,4 +1,5 @@
 use super::consts::*;
+use super::board::get_center_of_board_coordinates;
 use super::point::*;
 use std::collections::VecDeque;
 use std::sync::RwLock;
@@ -6,7 +7,7 @@ use thiserror::Error;
 use tracing::trace;
 
 #[derive(Debug)]
-struct SnakeIncreaseCommand {}
+pub struct SnakeIncreaseCommand {}
 
 #[derive(Debug)]
 pub struct RwLockedSnake(RwLock<Snake>);
@@ -25,19 +26,15 @@ pub struct Snake {
     orphaned_tail: Point,
 }
 
-fn get_center_of_board_coordinates() -> u16 {
-    BOARD_SIZE / 2 + (BOARD_SIZE % 2 != 0) as u16 - 1
-}
 
 impl Default for Snake {
     fn default() -> Self {
         let center = get_center_of_board_coordinates();
 
         let body: VecDeque<Point> = (0..3)
-            .map(|i| Point::new_with_state(
-                center + i,
-                center,
-                State::Occupied
+            .map(|i| Point::new(
+                center.y + i,
+                center.x,
             ))
             .collect();
 
@@ -147,7 +144,8 @@ impl Snake {
 #[cfg(test)]
 mod tests {
     use super::{get_center_of_board_coordinates, Direction, Point, Snake};
-    use crate::game::snake::{SnakeError, BOARD_SIZE, State};
+    use crate::game::snake::{SnakeError};
+    use crate::game::consts::*;
     use pretty_assertions::{assert_eq, assert_ne};
 
 
@@ -170,10 +168,9 @@ mod tests {
         let move_result = snake.make_move(None);
         let center = get_center_of_board_coordinates();
 
-        let expected_point = Point::new_with_state(
-            center - 1,
-            center,
-            State::Occupied,
+        let expected_point = Point::new(
+            center.y - 1,
+            center.x,
         );
 
         assert_eq!(move_result.err(), None);
@@ -184,20 +181,19 @@ mod tests {
     fn test_snake_head_positions_while_moving() {
         let mut snake = Snake::new();
         let center = get_center_of_board_coordinates();
-        let mut point = Point::new_with_state(
-            center,
-            center,
-            State::Occupied
+        let mut point = Point::new(
+            center.y,
+            center.x,
         );
 
         assert_eq!(*snake.head().unwrap(), point);
 
         let _ = snake.make_move(Some(Direction::Right));
-        point.x = 10;
+        point.x = center.x + 1;
         assert_eq!(*snake.head().unwrap(), point);
 
         _ = snake.make_move(Some(Direction::Down));
-        point.y = 10;
+        point.y = center.y + 1;
         assert_eq!(*snake.head().unwrap(), point);
 
         _ = snake.make_move(Some(Direction::Up));
@@ -209,9 +205,9 @@ mod tests {
         let mut snake = Snake::new();
         let center = get_center_of_board_coordinates();
 
-        (center..BOARD_SIZE)
-            .chain(0..=center)
-            .map(|i| Point::new_with_state(center, i, State::Occupied))
+        (center.x..BOARD_SIZE_X)
+            .chain(0..=center.x)
+            .map(|i| Point::new(center.y, i))
             .for_each(|point| {
                 assert_eq!(*snake.head().unwrap(), point);
                 let _ = snake.make_move(Some(Direction::Right));

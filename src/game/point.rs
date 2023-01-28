@@ -51,31 +51,14 @@ impl From<Direction> for i16 {
     }
 }
 
-fn add_with_respect_to_bounds(coordinate: u16, move_with_dir: Direction) -> u16 {
+fn add_with_respect_to_bounds(coordinate: u16, move_with_dir: Direction, bound: u16) -> u16 {
     let coordinate_change: i16 = i16::from(move_with_dir);
     if coordinate_change == -1 {
-        coordinate.checked_sub(1).unwrap_or(BOARD_SIZE - 1)
-    } else if coordinate + 1 >= BOARD_SIZE {
+        coordinate.checked_sub(1).unwrap_or(bound - 1)
+    } else if coordinate + 1 >= bound {
         0
     } else {
         coordinate + coordinate_change as u16
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum State {
-    Occupied,
-
-    #[default]
-    Free,
-}
-
-impl State {
-    pub fn opposite(self) -> Self {
-        match self {
-            State::Occupied => State::Free,
-            State::Free => State::Occupied,
-        }
     }
 }
 
@@ -83,7 +66,6 @@ impl State {
 pub struct Point {
     pub x: u16,
     pub y: u16,
-    pub state: State,
 }
 
 impl Point {
@@ -91,20 +73,7 @@ impl Point {
         Self {
             y,
             x,
-            state: State::default(),
         }
-    }
-
-    pub fn new_with_state(y: u16, x: u16, state: State) -> Self {
-        Self {
-            y,
-            x,
-            state,
-        }
-    }
-
-    pub fn change_state(&mut self) {
-        self.state = self.state.opposite();
     }
 
     pub fn set_coords(&mut self, (y, x): (u16, u16)) {
@@ -119,18 +88,22 @@ impl Point {
 
 impl ops::AddAssign<Direction> for Point {
     fn add_assign(&mut self, rhs: Direction) {
-        let coordinate_ref = match rhs {
-            Direction::Up | Direction::Down => &mut self.y,
-            Direction::Left | Direction::Right => &mut self.x,
+         match rhs {
+            Direction::Up | Direction::Down => {
+                self.y = add_with_respect_to_bounds(self.y, rhs, BOARD_SIZE_Y);
+            },
+            Direction::Left | Direction::Right => {
+                self.x = add_with_respect_to_bounds(self.x, rhs, BOARD_SIZE_X);
+            },
         };
 
-        *coordinate_ref = add_with_respect_to_bounds(*coordinate_ref, rhs);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Direction, Point, BOARD_SIZE};
+    use super::{Direction, Point};
+    use super::super::consts::*;
     use pretty_assertions::{assert_eq, assert_ne};
 
 
@@ -163,7 +136,7 @@ mod tests {
         let mut point = Point::new(0, 0);
         point += direction;
 
-        assert_eq!(point.x, BOARD_SIZE as u16 - 1);
+        assert_eq!(point.x, BOARD_SIZE_X as u16 - 1);
     }
 
     #[test]
@@ -171,7 +144,7 @@ mod tests {
         let direction = Direction::Down;
 
         let mut point = Point::new(
-            BOARD_SIZE as u16 - 1,
+            BOARD_SIZE_Y as u16 - 1,
             0
         );
         point += direction;

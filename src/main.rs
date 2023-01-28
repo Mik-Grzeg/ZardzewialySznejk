@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tracing::{Level, info};
 use tracing_subscriber::{FmtSubscriber, EnvFilter, Registry, layer::Layered, filter::LevelFilter, fmt::format::{DefaultFields, Format}};
 
-const FPS: f32 = 3.0;
+const FPS: f32 = 10.0;
 
 type TracingSub = FmtSubscriber<DefaultFields, Format, tracing_subscriber::reload::Layer<EnvFilter, Layered<tracing_subscriber::fmt::Layer<Registry>, Registry>>>;
 
