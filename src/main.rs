@@ -1,6 +1,7 @@
 use snake::game::new_game;
 use snake::game::movement::OrderMove;
 use snake::server;
+use std::sync::Arc;
 
 use tracing::{Level, info};
 use tracing_subscriber::{FmtSubscriber, EnvFilter, Registry, layer::Layered, filter::LevelFilter, fmt::format::{DefaultFields, Format}};
@@ -26,12 +27,12 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     loop {
-        let (mut game, move_orderer, board) = new_game(FPS);
-        let board = game.board.clone();
+        let (mut game, move_orderer) = new_game(FPS);
+        let board = Arc::clone(&game.board);
 
         tokio::select! {
             _ = game.start() => { }
-            _ = server::run(move_orderer, Arc::clone(&board)) => {
+            _ = server::run(move_orderer, board) => {
                 info!("HTTP server shutdown");
                 break;
             }

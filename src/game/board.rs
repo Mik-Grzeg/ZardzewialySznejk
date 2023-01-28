@@ -1,9 +1,10 @@
-use super::consts::*;
+use super::{consts::*, point};
+use super::point::Point;
 
 use std::{
     fmt::{Display, Write},
 };
-const BOARD_USIZE: usize = BOARD_SIZE as usize;
+const CANVAS_SIZE: usize = BOARD_SIZE as usize + 2 ;
 
 const SE: char = '┌';
 const SW: char = '┐';
@@ -21,7 +22,7 @@ const NEW: char = '┴';
 const NEWS: char = '┼';
 
 #[derive(Debug, Clone, Copy)]
-enum Junction {
+pub enum Junction {
     NE,
     NW,
     SE,
@@ -40,7 +41,7 @@ impl From<Junction> for char {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum Wall {
+pub enum Wall {
     NS,
     EW,
 }
@@ -55,7 +56,7 @@ impl From<Wall> for char {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum CellSymbol {
+pub enum CellSymbol {
     Board,
     Snake,
     SnakeHead,
@@ -84,12 +85,18 @@ impl Display for CellSymbol {
     }
 }
 
-type Canvas = [[CellSymbol; BOARD_USIZE]; BOARD_USIZE];
+trait ChangeableCell {
+    fn change_to_new_symbol(&self, symbol: CellSymbol);
+}
+
+type Canvas = [[CellSymbol; CANVAS_SIZE]; CANVAS_SIZE];
 
 #[derive(Debug)]
 pub struct Board {
-    canvas: Canvas,
-    // cached_printable_canvas: [u8; BOARD_USIZE * BOARD_USIZE],
+
+    // This could be a RwLock,
+    // so it would avoid reading partial updates
+    canvas: Canvas
 }
 
 impl Board {
@@ -103,27 +110,37 @@ impl Board {
 
         Ok(())
     }
+
+    fn translate_points_to_cavas_points(&self, point: &Point) -> (usize, usize) {
+        let (y, x) = point.get_coords();
+        (y as usize + 1, x as usize + 1)
+    }
+
+    pub fn change_cell_symbol(&mut self, point: &Point, symbol: CellSymbol) {
+        let (y, x) = self.translate_points_to_cavas_points(point);
+        self.canvas[y][x] = symbol;
+    }
 }
 
 impl Default for Board {
     fn default() -> Board {
-        let mut data = [[CellSymbol::Board; BOARD_USIZE]; BOARD_USIZE];
+        let mut data = [[CellSymbol::Board; CANVAS_SIZE]; CANVAS_SIZE];
 
-        for i in 1..(BOARD_USIZE - 1) {
+        for i in 1..(CANVAS_SIZE - 1) {
             // set '|' for vertical walls
             data[i][0] = CellSymbol::Wall(Wall::NS);
-            data[i][BOARD_USIZE - 1] = CellSymbol::Wall(Wall::NS);
+            data[i][CANVAS_SIZE - 1] = CellSymbol::Wall(Wall::NS);
 
             // set '-' for horizontal walls
             data[0][i] = CellSymbol::Wall(Wall::EW);
-            data[BOARD_USIZE - 1][i] = CellSymbol::Wall(Wall::EW);
+            data[CANVAS_SIZE - 1][i] = CellSymbol::Wall(Wall::EW);
         }
 
         // set proper symbol for corner cells
         data[0][0] = CellSymbol::Junction(Junction::SE);
-        data[BOARD_USIZE - 1][BOARD_USIZE - 1] = CellSymbol::Junction(Junction::NW);
-        data[0][BOARD_USIZE - 1] = CellSymbol::Junction(Junction::SW);
-        data[BOARD_USIZE - 1][0] = CellSymbol::Junction(Junction::NE);
+        data[CANVAS_SIZE - 1][CANVAS_SIZE - 1] = CellSymbol::Junction(Junction::NW);
+        data[0][CANVAS_SIZE - 1] = CellSymbol::Junction(Junction::SW);
+        data[CANVAS_SIZE - 1][0] = CellSymbol::Junction(Junction::NE);
 
         Board { canvas: data }
     }

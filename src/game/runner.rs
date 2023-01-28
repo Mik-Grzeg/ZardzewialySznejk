@@ -1,6 +1,6 @@
 use self::movement::OrderError;
 
-use super::board::Board;
+use super::board::{Board, CellSymbol};
 use super::consts::*;
 use super::point::Direction;
 use super::snake::{Snake, SnakeError};
@@ -167,6 +167,22 @@ impl Game {
                 }
                 _ = self.move_command_manager_recv.wait_for_command_and_act(&mut direction_command_counters, &self.snake.get_current_direction()) => { }
             }
+            self.next_frame();
+        }
+    }
+
+    fn next_frame(&mut self) {
+        let mut board = self.board.write().unwrap();
+
+        // Override new head cell with snake head symbol
+        (*board).change_cell_symbol(self.snake.head().unwrap(), CellSymbol::SnakeHead);
+
+        // Override old head cell with snake body symbol
+        (*board).change_cell_symbol(self.snake.second_segment().unwrap(), CellSymbol::Snake);
+
+        // Override old tail cell with board symbol
+        if let Some(point) = self.snake.get_orphaned_tail() {
+            (*board).change_cell_symbol(point, CellSymbol::Board);
         }
     }
 

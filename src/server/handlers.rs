@@ -26,10 +26,10 @@ where
 }
 
 async fn get_game_state(board: web::Data<Arc<RwLock<Board>>>) -> Result<String> {
-    info!("Received request to show board");
-    let brd = board.read().unwrap();
+    let board = board.read().unwrap();
     let mut out = String::new();
-    brd.get_board(&mut out)
+
+    board.get_board(&mut out)
         .map_err(|e| {
             error!("Writing board to str failed: {}", e);
             error::ErrorInternalServerError(e)

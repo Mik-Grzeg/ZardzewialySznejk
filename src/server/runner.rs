@@ -8,10 +8,6 @@ use super::state::AppState;
 use std::sync::{Arc, RwLock};
 use tracing::info;
 
-struct ServerSettings {
-    port: u16,
-}
-
 const host: &str = "0.0.0.0";
 const port: u16 = 8080;
 
@@ -25,7 +21,7 @@ where
         move || {
             App::new()
                 .wrap(TracingLogger::default())
-                .service(snake_service(board.clone(), move_manager.clone()))
+                .service(snake_service(Arc::clone(&board), move_manager.clone()))
                 .service(healthy)
         })
         .bind((host, port))?

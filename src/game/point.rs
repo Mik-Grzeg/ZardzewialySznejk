@@ -70,13 +70,13 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn set_coords(&mut self, (x, y): (u16, u16)) {
+    pub fn set_coords(&mut self, (y, x): (u16, u16)) {
         self.x = x;
         self.y = y;
     }
 
     pub fn get_coords(&self) -> (u16, u16) {
-        (self.x, self.y)
+        (self.y, self.x)
     }
 }
 

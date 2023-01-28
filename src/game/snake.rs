@@ -22,6 +22,7 @@ pub struct Snake {
     body: VecDeque<Point>,
     increase_snake: Option<SnakeIncreaseCommand>,
     head_current_direction: Direction,
+    orphaned_tail: Point,
 }
 
 fn get_center_of_board_coordinates() -> u16 {
@@ -32,7 +33,7 @@ impl Default for Snake {
     fn default() -> Self {
         let center = get_center_of_board_coordinates();
 
-        let body = (0..3)
+        let body: VecDeque<Point> = (0..3)
             .map(|i| Point {
                 x: center,
                 y: center + i,
@@ -40,6 +41,7 @@ impl Default for Snake {
             .collect();
 
         Snake {
+            orphaned_tail: body.back().copied().unwrap(),
             body,
             increase_snake: None,
             head_current_direction: Direction::Up,
@@ -70,7 +72,11 @@ impl Snake {
 
     fn prepare_new_segment(&mut self) -> Result<Point, SnakeError> {
         let new_segment_or_err = match self.increase_snake {
-            None => self.body.pop_back(),
+            None => {
+                let old_tail = self.body.pop_back();
+                self.orphaned_tail = old_tail.unwrap();
+                old_tail
+            },
             Some(_) => self.body.back().copied(),
         }
         .ok_or(SnakeError::BodyIsEmpty);
@@ -101,13 +107,26 @@ impl Snake {
         result_if_bite
     }
 
-    fn head(&self) -> Option<&Point> {
+    pub fn head(&self) -> Option<&Point> {
         self.body.front()
+    }
+
+    pub fn second_segment(&self) -> Option<&Point> {
+        self.body.get(1)
+    }
+
+    pub fn get_orphaned_tail(&self) -> Option<&Point> {
+        match self.increase_snake {
+            None => Some(&self.orphaned_tail),
+            Some(_) => None,
+        }
     }
 
     fn size(&self) -> usize {
         self.body.len()
     }
+
+
 
     fn increase_snake_command(&mut self) {
         self.increase_snake = Some(SnakeIncreaseCommand {})
