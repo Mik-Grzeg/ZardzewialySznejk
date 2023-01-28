@@ -1,42 +1,112 @@
+use self::movement::OrderError;
+
 use super::board::Board;
 use super::consts::*;
 use super::point::Direction;
 use super::snake::{Snake, SnakeError};
 use std::collections::HashMap;
-
+use std::sync::RwLock;
 
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
+use async_trait::async_trait;
+use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::{interval_at, Duration, Instant, Interval, MissedTickBehavior};
 use tracing::{debug, error, info, trace, warn};
+use movement::OrderMove;
 
 const MOVE_COMMAND_CHANNEL_SIZE: usize = 1000;
 
-#[derive(Debug)]
-struct MoveCommandManager {
-    command_rx: Receiver<Direction>,
-    command_sender: Sender<Direction>,
-}
+pub mod movement {
+    use std::fmt::Debug;
+    use async_trait::async_trait;
+    use tokio::sync::mpsc::error::SendError;
+    use super::Direction;
+    use thiserror::Error;
 
-impl Default for MoveCommandManager {
-    fn default() -> Self {
-        let (command_sender, command_rx) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
-        MoveCommandManager {
-            command_rx,
-            command_sender,
+    #[async_trait]
+    pub trait OrderMove: Send + Sync + Debug {
+        async fn issue_move(&self, direction: Direction) -> Result<(), OrderError>;
+    }
+
+    #[derive(Error, Debug)]
+    pub enum OrderError {
+        #[error("Unable to issue new movement command `{0}`")]
+        IssueMovement(String)
+    }
+
+    impl<T: Debug> From<SendError<T>> for OrderError {
+        fn from(send_err: SendError<T>) -> Self {
+            Self::IssueMovement(send_err.to_string())
         }
     }
 }
 
-#[tracing::instrument]
-pub async fn start_game(fps: f32) {
-    let mut game = Game {
-        fps,
-        ..Default::default()
-    };
+enum MoveCommandManager {
+    Issuer(MoveCommandIssuer),
+    Receiver(MoveCommandReceiver),
+}
 
-    game.start().await;
+#[derive(Debug)]
+struct MoveCommandReceiver {
+    command_rx: Receiver<Direction>,
+}
+
+impl From<Receiver<Direction>> for MoveCommandReceiver {
+    fn from(command_rx: Receiver<Direction>) -> Self {
+        Self { command_rx }
+    }
+}
+
+impl MoveCommandReceiver {
+    async fn wait_for_command_and_act(&mut self, direction_command_counters: &mut HashMap<Direction, u32>, current_direction: &Direction) {
+        match self.command_rx.recv().await {
+            Some(c) => {
+                if c == current_direction.opposite() {
+                    return
+                }
+                direction_command_counters.entry(c).and_modify(|counter| *counter +=  1).or_insert(1);
+                debug!("Received a move command from user {:?}", c);
+            }
+            None => {
+                warn!("Received a move command although it was empty");
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MoveCommandIssuer {
+    command_sender: Sender<Direction>,
+}
+
+impl From<Sender<Direction>> for MoveCommandIssuer {
+    fn from(command_sender: Sender<Direction>) -> Self {
+        Self { command_sender }
+    }
+}
+
+#[async_trait]
+impl OrderMove for MoveCommandIssuer {
+    #[tracing::instrument]
+    async fn issue_move(&self, direction: Direction) -> Result<(), OrderError> {
+        trace!("Issueing new move: {:?}", direction);
+        self.command_sender
+            .send(direction)
+            .await?;
+
+        Ok(())
+    }
+}
+
+pub fn new_game(fps: f32) -> (Game, MoveCommandIssuer) {
+    let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
+    let game = Game::new(command_recv.into(), fps);
+    let order_move = MoveCommandIssuer::from(command_sender);
+
+    (game, order_move)
 }
 
 fn create_game_action_interval(spf: f32) -> Interval {
@@ -47,6 +117,7 @@ fn create_game_action_interval(spf: f32) -> Interval {
     interval
 }
 
+
 #[tracing::instrument(skip(rng))]
 fn pick_move_direction_based_on_probabilities(
     issued_commands: &mut HashMap<Direction, u32>,
@@ -56,18 +127,18 @@ fn pick_move_direction_based_on_probabilities(
     let dist = WeightedIndex::new(&weights).ok()?;
 
     let picked_direction = directions[dist.sample(&mut rng)];
-    trace!("Picked direction: {:?}", picked_direction);
+    debug!("Picked direction to move: {:?}", picked_direction);
 
     Some(picked_direction)
 }
 
-#[derive(Default, Debug)]
-struct Game {
+#[derive(Debug)]
+pub struct Game {
     score: u32,
     snake: Snake,
-    board: Board,
+    pub board: Arc<RwLock<Board>>,
     fps: f32,
-    move_command_manager: MoveCommandManager,
+    move_command_manager_recv: MoveCommandReceiver,
 }
 
 impl Game {
@@ -77,9 +148,7 @@ impl Game {
 
         let mut direction_command_counters: HashMap<Direction, u32> = HashMap::with_capacity(3);
 
-        trace!("Whats happening");
         loop {
-            trace!("Whats happening");
             tokio::select! {
                 _ = interval.tick() => {
                     let direction = pick_move_direction_based_on_probabilities(&mut direction_command_counters, &mut rng);
@@ -96,22 +165,24 @@ impl Game {
                         },
                     }
                 }
-                command = self.move_command_manager.command_rx.recv() => {
-                    match command {
-                        Some(c) => {
-                            direction_command_counters.entry(c).and_modify(|counter| *counter +=  1).or_insert(1);
-                            debug!("Received a move command from user {:?}", command);
-                        }
-                        None => {
-                            warn!("Received a move command although it was empty");
-                        }
-                    };
-                }
+                _ = self.move_command_manager_recv.wait_for_command_and_act(&mut direction_command_counters, &self.snake.get_current_direction()) => { }
             }
+        }
+    }
+
+    fn new(move_command_manager_recv: MoveCommandReceiver, fps: f32) -> Self {
+        Self {
+            move_command_manager_recv,
+            fps,
+            score: 0,
+            snake: Snake::default(),
+            board: Arc::new(RwLock::new(Board::default())),
         }
     }
 
     fn convert_fps_to_spf(&self) -> f32 {
         1.0 / self.fps as f32
     }
+
 }
+

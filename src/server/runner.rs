@@ -1,9 +1,34 @@
 use actix_web::{web, App, HttpResponse, HttpServer};
+use tracing_actix_web::TracingLogger;
+use super::handlers::snake_service;
+use super::health::healthy;
+use crate::game::movement::OrderMove;
+use crate::game::Board;
+use super::state::AppState;
+use std::sync::{Arc, RwLock};
+use tracing::info;
 
 struct ServerSettings {
     port: u16,
 }
 
-async fn serve(_settings: ServerSettings) {
-    HttpServer::new(|| App::new().route("/snake", web::get().to(HttpResponse::Ok))).workers(4);
+const host: &str = "0.0.0.0";
+const port: u16 = 8080;
+
+pub async fn run<T>(move_manager: T, board: Arc<RwLock<Board>>) -> std::io::Result<()>
+where
+    T: OrderMove + Clone + 'static
+{
+    info!("Starting web server on {}:{}", host, port);
+
+    HttpServer::new(
+        move || {
+            App::new()
+                .wrap(TracingLogger::default())
+                .service(snake_service(board.clone(), move_manager.clone()))
+                .service(healthy)
+        })
+        .bind((host, port))?
+        .run()
+        .await
 }

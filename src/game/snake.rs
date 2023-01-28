@@ -113,8 +113,8 @@ impl Snake {
         self.increase_snake = Some(SnakeIncreaseCommand {})
     }
 
-    pub fn get_current_direction(&self) -> Direction {
-        self.head_current_direction
+    pub fn get_current_direction(&self) -> &Direction {
+        &self.head_current_direction
     }
 }
 

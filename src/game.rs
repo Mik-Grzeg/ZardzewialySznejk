@@ -5,4 +5,6 @@ mod runner;
 mod snake;
 
 pub use point::Direction;
-pub use runner::start_game;
+pub use board::Board;
+pub use runner::new_game;
+pub use runner::movement;
