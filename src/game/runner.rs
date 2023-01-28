@@ -1,112 +1,72 @@
-use self::movement::OrderError;
-
-use super::board::{Board, CellSymbol};
+use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::TryRecvError;
+use crate::server;
+use super::fruit::Fruit;
+use std::thread;
+use super::board::{Board, CellSymbol, generate_points_pool};
 use super::consts::*;
-use super::point::Direction;
+use super::point::{Direction, Point};
 use super::snake::{Snake, SnakeError};
 use std::collections::HashMap;
 use std::sync::RwLock;
+use tokio::task;
+use tokio::signal;
+
 
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use async_trait::async_trait;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc;
 use tokio::time::{interval_at, Duration, Instant, Interval, MissedTickBehavior};
 use tracing::{debug, error, info, trace, warn};
-use movement::OrderMove;
+use super::movement::OrderMove;
+use super::commands::{MoveCommandReceiver, MoveCommandIssuer};
 
 const MOVE_COMMAND_CHANNEL_SIZE: usize = 1000;
 
-pub mod movement {
-    use std::fmt::Debug;
-    use async_trait::async_trait;
-    use tokio::sync::mpsc::error::SendError;
-    use super::Direction;
-    use thiserror::Error;
-
-    #[async_trait]
-    pub trait OrderMove: Send + Sync + Debug {
-        async fn issue_move(&self, direction: Direction) -> Result<(), OrderError>;
-    }
-
-    #[derive(Error, Debug)]
-    pub enum OrderError {
-        #[error("Unable to issue new movement command `{0}`")]
-        IssueMovement(String)
-    }
-
-    impl<T: Debug> From<SendError<T>> for OrderError {
-        fn from(send_err: SendError<T>) -> Self {
-            Self::IssueMovement(send_err.to_string())
-        }
-    }
-}
-
-enum MoveCommandManager {
-    Issuer(MoveCommandIssuer),
-    Receiver(MoveCommandReceiver),
-}
-
-#[derive(Debug)]
-struct MoveCommandReceiver {
-    command_rx: Receiver<Direction>,
-}
-
-impl From<Receiver<Direction>> for MoveCommandReceiver {
-    fn from(command_rx: Receiver<Direction>) -> Self {
-        Self { command_rx }
-    }
-}
-
-impl MoveCommandReceiver {
-    async fn wait_for_command_and_act(&mut self, direction_command_counters: &mut HashMap<Direction, u32>, current_direction: &Direction) {
-        match self.command_rx.recv().await {
-            Some(c) => {
-                if c == current_direction.opposite() {
-                    return
-                }
-                direction_command_counters.entry(c).and_modify(|counter| *counter +=  1).or_insert(1);
-                debug!("Received a move command from user {:?}", c);
-            }
-            None => {
-                warn!("Received a move command although it was empty");
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MoveCommandIssuer {
-    command_sender: Sender<Direction>,
-}
-
-impl From<Sender<Direction>> for MoveCommandIssuer {
-    fn from(command_sender: Sender<Direction>) -> Self {
-        Self { command_sender }
-    }
-}
-
-#[async_trait]
-impl OrderMove for MoveCommandIssuer {
-    #[tracing::instrument]
-    async fn issue_move(&self, direction: Direction) -> Result<(), OrderError> {
-        trace!("Issueing new move: {:?}", direction);
-        self.command_sender
-            .send(direction)
-            .await?;
-
-        Ok(())
-    }
-}
-
-pub fn new_game(fps: f32) -> (Game, MoveCommandIssuer) {
+pub async fn new_game(fps: f32) {
     let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
-    let game = Game::new(command_recv.into(), fps);
-    let order_move = MoveCommandIssuer::from(command_sender);
+    let command_receiver = command_recv.into();
 
-    (game, order_move)
+    let board = Arc::new(RwLock::new(Board::default()));
+    let order_move = Arc::new(RwLock::new(MoveCommandIssuer::from(command_sender)));
+
+    let mut game = Game::new(command_receiver, Arc::clone(&board), fps);
+
+    let (terminal_signal_tx, _) = broadcast::channel(1);
+    let tx_for_server =  terminal_signal_tx.clone();
+
+    let server_running = server::run(Arc::clone(&order_move), Arc::clone(&board));
+
+    let game_loop = tokio::spawn(async move {
+        loop {
+            let rx = terminal_signal_tx.subscribe();
+            tokio::select!{
+                _ = game.start(rx) => {
+                    let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
+
+                    let command_receiver = command_recv.into();
+                    order_move.write().unwrap().set_issuer(command_sender);
+                    *board.write().unwrap() = Board::default();
+
+                    game = Game::new(command_receiver, Arc::clone(&board), fps);
+                }
+                _ = signal::ctrl_c() => {
+                    terminal_signal_tx.send(());
+                    break;
+                }
+            }
+        }
+    });
+
+    tokio::select! {
+        _ = server_running => {
+            tx_for_server.send(());
+        }
+        _ = game_loop => {}
+    }
 }
 
 fn create_game_action_interval(spf: f32) -> Interval {
@@ -136,23 +96,36 @@ fn pick_move_direction_based_on_probabilities(
 pub struct Game {
     score: u32,
     snake: Snake,
+    fruits: Vec<Fruit>,
     pub board: Arc<RwLock<Board>>,
     fps: f32,
     move_command_manager_recv: MoveCommandReceiver,
 }
 
-impl Game {
-    pub async fn start(&mut self) {
-        let mut interval = create_game_action_interval(self.convert_fps_to_spf());
-        let mut rng = thread_rng();
 
+
+impl Game {
+    pub async fn start(&mut self, mut shutdown_signal_recv: broadcast::Receiver<()>) {
+        let mut interval = create_game_action_interval(self.convert_fps_to_spf());
         let mut direction_command_counters: HashMap<Direction, u32> = HashMap::with_capacity(3);
+        let filtered_out_occupied_points: Vec<Point> = generate_points_pool();
 
         loop {
+            match shutdown_signal_recv.try_recv() {
+                Ok(_) | Err(TryRecvError::Closed) => break,
+                _ => {},
+            };
+
             self.next_frame();
+
+            filtered_out_occupied_points.filter();
+            if let Some(fruit) = Fruit::try_spawn_at_random_place(&filtered_out_occupied_points) {
+                self.fruits.push(fruit);
+            };
+
             tokio::select! {
                 _ = interval.tick() => {
-                    let direction = pick_move_direction_based_on_probabilities(&mut direction_command_counters, &mut rng);
+                    let direction = pick_move_direction_based_on_probabilities(&mut direction_command_counters, &mut thread_rng());
 
                     match self.snake.make_move(direction) {
                         Err(SnakeError::BitOffHisTail) => {
@@ -186,13 +159,13 @@ impl Game {
         }
     }
 
-    fn new(move_command_manager_recv: MoveCommandReceiver, fps: f32) -> Self {
+    fn new(move_command_manager_recv: MoveCommandReceiver, board: Arc<RwLock<Board>>, fps: f32) -> Self {
         Self {
             move_command_manager_recv,
             fps,
             score: 0,
             snake: Snake::default(),
-            board: Arc::new(RwLock::new(Board::default())),
+            board
         }
     }
 

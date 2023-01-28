@@ -1,5 +1,5 @@
 use super::{consts::*, point};
-use super::point::Point;
+use super::point::{Point, State};
 use rand::seq::{SliceRandom, IteratorRandom};
 
 use std::{
@@ -90,11 +90,11 @@ impl Display for CellSymbol {
 //     fn change_to_new_symbol(&self, symbol: CellSymbol);
 // }
 
-#[derive(Debug)]
-pub struct PointPool {
-    free: Vec<Point>,
-    occupied: Vec<Point>,
-}
+// #[derive(Debug)]
+// pub struct PointPool {
+//     free: Vec<Point>,
+//     occupied: Vec<Point>,
+// }
 
 
 
@@ -115,26 +115,19 @@ pub struct PointPool {
 // }
 
 // impl Default for PointPool {
-//     fn default() -> Self {
-//         let free = (0..BOARD_SIZE)
-//             .into_iter()
-//             .map(|y| {
-//                 let copy_y = y;
-//                 (0..BOARD_SIZE)
-//                     .map(move |x| {
-//                         Point { x,  y: copy_y }
-//                     })
-//             })
-//             .flatten()
-//             .collect();
-//         let occupied = Vec::new();
-
-//         Self {
-//             free,
-//             occupied
-//         }
-//     }
-// }
+pub fn generate_points_pool() -> Vec<Point> {
+    (0..BOARD_SIZE)
+        .into_iter()
+        .map(|y| {
+            let copy_y = y;
+            (0..BOARD_SIZE)
+                .map(move |x| {
+                    Point { x,  y: copy_y, state: State::Free }
+                })
+        })
+        .flatten()
+        .collect()
+}
 
 type Canvas = [[CellSymbol; CANVAS_SIZE]; CANVAS_SIZE];
 
@@ -193,3 +186,44 @@ impl Default for Board {
         Board { canvas }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::{assert_eq, assert_ne};
+
+
+    #[test]
+    fn test_default_cavas() {
+        let raw_canvas = r#"┌────────────────────┐
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+│                    │
+└────────────────────┘
+"#;
+
+        let board = Board::default();
+        let mut generated_board_str = String::new();
+        board.get_board(&mut generated_board_str).unwrap();
+
+        assert_eq!(raw_canvas, generated_board_str.as_str());
+    }
+}
+

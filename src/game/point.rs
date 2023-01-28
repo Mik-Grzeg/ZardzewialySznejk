@@ -52,7 +52,6 @@ impl From<Direction> for i16 {
 }
 
 fn add_with_respect_to_bounds(coordinate: u16, move_with_dir: Direction) -> u16 {
-    // TODO change it so it's cleaner
     let coordinate_change: i16 = i16::from(move_with_dir);
     if coordinate_change == -1 {
         coordinate.checked_sub(1).unwrap_or(BOARD_SIZE - 1)
@@ -132,6 +131,8 @@ impl ops::AddAssign<Direction> for Point {
 #[cfg(test)]
 mod tests {
     use super::{Direction, Point, BOARD_SIZE};
+    use pretty_assertions::{assert_eq, assert_ne};
+
 
     #[test]
     fn test_point_add_assign_increase_y_in_bounds() {

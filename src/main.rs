@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tracing::{Level, info};
 use tracing_subscriber::{FmtSubscriber, EnvFilter, Registry, layer::Layered, filter::LevelFilter, fmt::format::{DefaultFields, Format}};
 
-const FPS: f32 = 0.5;
+const FPS: f32 = 3.0;
 
 type TracingSub = FmtSubscriber<DefaultFields, Format, tracing_subscriber::reload::Layer<EnvFilter, Layered<tracing_subscriber::fmt::Layer<Registry>, Registry>>>;
 
@@ -21,21 +21,35 @@ fn init_tracing() -> TracingSub {
         .finish()
 }
 
+// async fn start_components() {
+//     let (mut game, move_orderer) = new_game(FPS);
+//     let board = Arc::clone(&game.board);
+// }
+
 #[tokio::main]
 async fn main() {
     let subscriber = init_tracing();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    loop {
-        let (mut game, move_orderer) = new_game(FPS);
-        let board = Arc::clone(&game.board);
+    new_game(FPS).await;
+    // loop {
+    //     let (mut game, move_orderer) = new_game(FPS);
 
-        tokio::select! {
-            _ = game.start() => { }
-            _ = server::run(move_orderer, board) => {
-                info!("HTTP server shutdown");
-                break;
-            }
-        }
-    }
+    //     let (command_sender, command_recv) = mpsc::channel(MOVE_COMMAND_CHANNEL_SIZE);
+    //     let game = Game::new(command_recv.into(), fps);
+    //     let order_move = MoveCommandIssuer::from(command_sender);
+
+    //     let board = Arc::clone(&game.board);
+
+    //     tokio::select! {
+    //         _ = game.start() => {
+    //             info!("Game finished");
+    //             continue;
+    //         }
+    //         _ = server::run(&move_orderer, board) => {
+    //             info!("HTTP server shutdown");
+    //             break;
+    //         }
+    //     }
+    // }
 }

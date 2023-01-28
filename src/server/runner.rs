@@ -11,9 +11,9 @@ use tracing::info;
 const host: &str = "0.0.0.0";
 const port: u16 = 8080;
 
-pub async fn run<T>(move_manager: T, board: Arc<RwLock<Board>>) -> std::io::Result<()>
+pub async fn run<T>(move_manager: Arc<RwLock<T>>, board: Arc<RwLock<Board>>) -> std::io::Result<()>
 where
-    T: OrderMove + Clone + 'static
+    T: OrderMove + 'static
 {
     info!("Starting web server on {}:{}", host, port);
 
@@ -21,7 +21,7 @@ where
         move || {
             App::new()
                 .wrap(TracingLogger::default())
-                .service(snake_service(Arc::clone(&board), move_manager.clone()))
+                .service(snake_service(Arc::clone(&board), Arc::clone(&move_manager)))
                 .service(healthy)
         })
         .bind((host, port))?

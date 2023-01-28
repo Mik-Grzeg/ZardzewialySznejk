@@ -71,6 +71,10 @@ impl Snake {
         }
     }
 
+    pub fn check_if_given_point_elapses(&self, point: &Point) -> bool {
+        self.body.contains(point)
+    }
+
     fn prepare_new_segment(&mut self) -> Result<Point, SnakeError> {
         let new_segment_or_err = match self.increase_snake {
             None => {
@@ -123,13 +127,15 @@ impl Snake {
         }
     }
 
+    pub fn get_occupied_points(&self) -> &VecDeque<Point> {
+        &self.body
+    }
+
     fn size(&self) -> usize {
         self.body.len()
     }
 
-
-
-    fn increase_snake_command(&mut self) {
+    pub fn increase_snake_command(&mut self) {
         self.increase_snake = Some(SnakeIncreaseCommand {})
     }
 
@@ -142,6 +148,8 @@ impl Snake {
 mod tests {
     use super::{get_center_of_board_coordinates, Direction, Point, Snake};
     use crate::game::snake::{SnakeError, BOARD_SIZE, State};
+    use pretty_assertions::{assert_eq, assert_ne};
+
 
     #[test]
     fn test_snake_making_moves() {

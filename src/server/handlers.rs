@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tracing::{error, info};
 
 
-pub fn snake_service<T>(board: Arc<RwLock<Board>>, move_manager: T) -> impl HttpServiceFactory
+pub fn snake_service<T>(board: Arc<RwLock<Board>>, move_manager: Arc<RwLock<T>>) -> impl HttpServiceFactory
 where
     T: OrderMove + 'static
 {
@@ -20,7 +20,7 @@ where
             .service(
                 web::resource("/{direction}")
                     .app_data(web::Data::new(move_manager))
-                    .route(web::post().to::<_, (actix_web::web::Path<String>, web::Data<T>)>(post_direction_command))
+                    .route(web::post().to::<_, (actix_web::web::Path<String>, web::Data<Arc<RwLock<T>>>)>(post_direction_command))
             )
     ]
 }
@@ -38,10 +38,11 @@ async fn get_game_state(board: web::Data<Arc<RwLock<Board>>>) -> Result<String> 
     Ok(out)
 }
 
-async fn post_direction_command(path: web::Path<String>, move_manager: web::Data<impl OrderMove>) -> Result<&'static str> {
+async fn post_direction_command(path: web::Path<String>, move_manager: web::Data<Arc<RwLock<impl OrderMove>>>) -> Result<&'static str> {
     let direction =
         Direction::try_from(path.into_inner()).map_err(error::ErrorBadRequest)?;
 
+    let move_manager = move_manager.read().unwrap();
     move_manager.issue_move(direction).await
         .map_err(|e| error::ErrorInternalServerError(e))?;
 

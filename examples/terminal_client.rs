@@ -8,7 +8,7 @@ const URL: &str = "http://localhost:8080/snake";
 fn main() {
     let client = Client::new();
 
-    let interval = Duration::from_secs(2);
+    let interval = Duration::from_secs_f32(0.33);
     let mut next_time = Instant::now() + interval;
 
     loop {
