@@ -1,5 +1,6 @@
 use super::{consts::*, point};
 use super::point::Point;
+use rand::seq::{SliceRandom, IteratorRandom};
 
 use std::{
     fmt::{Display, Write},
@@ -85,9 +86,55 @@ impl Display for CellSymbol {
     }
 }
 
-trait ChangeableCell {
-    fn change_to_new_symbol(&self, symbol: CellSymbol);
+// trait ChangeableCell {
+//     fn change_to_new_symbol(&self, symbol: CellSymbol);
+// }
+
+#[derive(Debug)]
+pub struct PointPool {
+    free: Vec<Point>,
+    occupied: Vec<Point>,
 }
+
+
+
+// impl PointPool {
+//     pub fn take_out_random_free_point(&mut self) -> Point {
+//         let i = (0..self.free.len()).choose(&mut rand::thread_rng()).unwrap(); // handle unwrap
+//         self.free.swap_remove(i)
+//     }
+
+//     pub fn add_new_free_point(&mut self, point: Point) {
+//         self.free.push(point);
+//     }
+
+//     pub fn take_out_specific_free_point(&mut self, (y, x): (u16, u16)) -> Option<Point> {
+//         let index = self.free.iter().position(|value| value.x == x && value.y == y)?;
+//         Some(self.free.swap_remove(index))
+//     }
+// }
+
+// impl Default for PointPool {
+//     fn default() -> Self {
+//         let free = (0..BOARD_SIZE)
+//             .into_iter()
+//             .map(|y| {
+//                 let copy_y = y;
+//                 (0..BOARD_SIZE)
+//                     .map(move |x| {
+//                         Point { x,  y: copy_y }
+//                     })
+//             })
+//             .flatten()
+//             .collect();
+//         let occupied = Vec::new();
+
+//         Self {
+//             free,
+//             occupied
+//         }
+//     }
+// }
 
 type Canvas = [[CellSymbol; CANVAS_SIZE]; CANVAS_SIZE];
 
@@ -96,7 +143,8 @@ pub struct Board {
 
     // This could be a RwLock,
     // so it would avoid reading partial updates
-    canvas: Canvas
+    canvas: Canvas,
+    // point_pool: PointPool,
 }
 
 impl Board {
@@ -124,24 +172,24 @@ impl Board {
 
 impl Default for Board {
     fn default() -> Board {
-        let mut data = [[CellSymbol::Board; CANVAS_SIZE]; CANVAS_SIZE];
+        let mut canvas = [[CellSymbol::Board; CANVAS_SIZE]; CANVAS_SIZE];
 
         for i in 1..(CANVAS_SIZE - 1) {
             // set '|' for vertical walls
-            data[i][0] = CellSymbol::Wall(Wall::NS);
-            data[i][CANVAS_SIZE - 1] = CellSymbol::Wall(Wall::NS);
+            canvas[i][0] = CellSymbol::Wall(Wall::NS);
+            canvas[i][CANVAS_SIZE - 1] = CellSymbol::Wall(Wall::NS);
 
             // set '-' for horizontal walls
-            data[0][i] = CellSymbol::Wall(Wall::EW);
-            data[CANVAS_SIZE - 1][i] = CellSymbol::Wall(Wall::EW);
+            canvas[0][i] = CellSymbol::Wall(Wall::EW);
+            canvas[CANVAS_SIZE - 1][i] = CellSymbol::Wall(Wall::EW);
         }
 
         // set proper symbol for corner cells
-        data[0][0] = CellSymbol::Junction(Junction::SE);
-        data[CANVAS_SIZE - 1][CANVAS_SIZE - 1] = CellSymbol::Junction(Junction::NW);
-        data[0][CANVAS_SIZE - 1] = CellSymbol::Junction(Junction::SW);
-        data[CANVAS_SIZE - 1][0] = CellSymbol::Junction(Junction::NE);
+        canvas[0][0] = CellSymbol::Junction(Junction::SE);
+        canvas[CANVAS_SIZE - 1][CANVAS_SIZE - 1] = CellSymbol::Junction(Junction::NW);
+        canvas[0][CANVAS_SIZE - 1] = CellSymbol::Junction(Junction::SW);
+        canvas[CANVAS_SIZE - 1][0] = CellSymbol::Junction(Junction::NE);
 
-        Board { canvas: data }
+        Board { canvas }
     }
 }

@@ -63,13 +63,51 @@ fn add_with_respect_to_bounds(coordinate: u16, move_with_dir: Direction) -> u16 
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum State {
+    Occupied,
+
+    #[default]
+    Free,
+}
+
+impl State {
+    pub fn opposite(self) -> Self {
+        match self {
+            State::Occupied => State::Free,
+            State::Free => State::Occupied,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Point {
     pub x: u16,
     pub y: u16,
+    pub state: State,
 }
 
 impl Point {
+    pub fn new(y: u16, x: u16) -> Self {
+        Self {
+            y,
+            x,
+            state: State::default(),
+        }
+    }
+
+    pub fn new_with_state(y: u16, x: u16, state: State) -> Self {
+        Self {
+            y,
+            x,
+            state,
+        }
+    }
+
+    pub fn change_state(&mut self) {
+        self.state = self.state.opposite();
+    }
+
     pub fn set_coords(&mut self, (y, x): (u16, u16)) {
         self.x = x;
         self.y = y;
@@ -99,7 +137,7 @@ mod tests {
     fn test_point_add_assign_increase_y_in_bounds() {
         let direction = Direction::Down;
 
-        let mut point = Point { x: 0, y: 6 };
+        let mut point = Point::new(6, 0);
         point += direction;
 
         assert_eq!(point.y, 7);
@@ -110,7 +148,7 @@ mod tests {
     fn test_point_add_assign_increase_x_in_bounds() {
         let direction = Direction::Left;
 
-        let mut point = Point { x: 5, y: 0 };
+        let mut point = Point::new(0, 5);
         point += direction;
 
         assert_eq!(point.y, 0);
@@ -121,7 +159,7 @@ mod tests {
     fn test_point_add_assign_increase_out_of_lower_bound() {
         let direction = Direction::Left;
 
-        let mut point = Point { x: 0, y: 0 };
+        let mut point = Point::new(0, 0);
         point += direction;
 
         assert_eq!(point.x, BOARD_SIZE as u16 - 1);
@@ -131,10 +169,10 @@ mod tests {
     fn test_point_add_assign_increase_out_of_upper_bound() {
         let direction = Direction::Down;
 
-        let mut point = Point {
-            x: 0,
-            y: BOARD_SIZE as u16 - 1,
-        };
+        let mut point = Point::new(
+            BOARD_SIZE as u16 - 1,
+            0
+        );
         point += direction;
 
         assert_eq!(point.y, 0);

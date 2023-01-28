@@ -34,10 +34,11 @@ impl Default for Snake {
         let center = get_center_of_board_coordinates();
 
         let body: VecDeque<Point> = (0..3)
-            .map(|i| Point {
-                x: center,
-                y: center + i,
-            })
+            .map(|i| Point::new_with_state(
+                center + i,
+                center,
+                State::Occupied
+            ))
             .collect();
 
         Snake {
@@ -140,7 +141,7 @@ impl Snake {
 #[cfg(test)]
 mod tests {
     use super::{get_center_of_board_coordinates, Direction, Point, Snake};
-    use crate::game::snake::{SnakeError, BOARD_SIZE};
+    use crate::game::snake::{SnakeError, BOARD_SIZE, State};
 
     #[test]
     fn test_snake_making_moves() {
@@ -161,10 +162,11 @@ mod tests {
         let move_result = snake.make_move(None);
         let center = get_center_of_board_coordinates();
 
-        let expected_point = Point {
-            x: center,
-            y: center - 1,
-        };
+        let expected_point = Point::new_with_state(
+            center - 1,
+            center,
+            State::Occupied,
+        );
 
         assert_eq!(move_result.err(), None);
         assert_eq!(*snake.head().unwrap(), expected_point);
@@ -174,10 +176,11 @@ mod tests {
     fn test_snake_head_positions_while_moving() {
         let mut snake = Snake::new();
         let center = get_center_of_board_coordinates();
-        let mut point = Point {
-            x: center,
-            y: center,
-        };
+        let mut point = Point::new_with_state(
+            center,
+            center,
+            State::Occupied
+        );
 
         assert_eq!(*snake.head().unwrap(), point);
 
@@ -200,7 +203,7 @@ mod tests {
 
         (center..BOARD_SIZE)
             .chain(0..=center)
-            .map(|i| Point { x: i, y: center })
+            .map(|i| Point::new_with_state(center, i, State::Occupied))
             .for_each(|point| {
                 assert_eq!(*snake.head().unwrap(), point);
                 let _ = snake.make_move(Some(Direction::Right));

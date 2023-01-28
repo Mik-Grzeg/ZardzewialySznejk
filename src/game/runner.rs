@@ -149,6 +149,7 @@ impl Game {
         let mut direction_command_counters: HashMap<Direction, u32> = HashMap::with_capacity(3);
 
         loop {
+            self.next_frame();
             tokio::select! {
                 _ = interval.tick() => {
                     let direction = pick_move_direction_based_on_probabilities(&mut direction_command_counters, &mut rng);
@@ -167,7 +168,6 @@ impl Game {
                 }
                 _ = self.move_command_manager_recv.wait_for_command_and_act(&mut direction_command_counters, &self.snake.get_current_direction()) => { }
             }
-            self.next_frame();
         }
     }
 
